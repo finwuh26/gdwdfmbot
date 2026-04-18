@@ -69,8 +69,8 @@ async function updateNowPlayingStatus() {
     const data = await response.json();
     const song = data?.now_playing?.song;
     const songText =
-      song?.text ||
       [song?.artist, song?.title].filter(Boolean).join(" - ") ||
+      song?.text ||
       "Goodwood FM";
 
     if (songText === lastPresenceText) {
