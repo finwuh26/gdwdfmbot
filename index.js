@@ -10,7 +10,7 @@ const {
   joinVoiceChannel,
   StreamType,
 } = require("@discordjs/voice");
-const ffmpegPath = require("ffmpeg-static");
+const ffmpegStaticPath = require("ffmpeg-static");
 require("dotenv").config();
 
 const requiredEnvVars = [
@@ -27,11 +27,6 @@ for (const envVar of requiredEnvVars) {
   }
 }
 
-if (!ffmpegPath) {
-  console.error("Could not find ffmpeg. Make sure ffmpeg-static installed correctly.");
-  process.exit(1);
-}
-
 const config = {
   token: process.env.DISCORD_TOKEN,
   guildId: process.env.GUILD_ID,
@@ -39,6 +34,7 @@ const config = {
   radioStreamUrl: process.env.RADIO_STREAM_URL,
   selfDeaf: process.env.BOT_DEAF !== "false",
   selfMute: process.env.BOT_MUTE === "true",
+  ffmpegPath: process.env.FFMPEG_PATH || "ffmpeg",
 };
 
 const client = new Client({
@@ -61,7 +57,7 @@ function startRadioStream() {
   stopCurrentStream();
 
   ffmpegProcess = spawn(
-    ffmpegPath,
+    config.ffmpegPath,
     [
       "-hide_banner",
       "-loglevel",
@@ -87,6 +83,16 @@ function startRadioStream() {
     }
   );
 
+  ffmpegProcess.once("error", (error) => {
+    console.error(`Failed to start FFmpeg using "${config.ffmpegPath}": ${error.message}`);
+
+    if (config.ffmpegPath !== ffmpegStaticPath && ffmpegStaticPath) {
+      console.log("Falling back to ffmpeg-static...");
+      config.ffmpegPath = ffmpegStaticPath;
+      startRadioStream();
+    }
+  });
+
   ffmpegProcess.stderr.on("data", (chunk) => {
     const message = chunk.toString().trim();
     if (message) {
@@ -109,7 +115,7 @@ function startRadioStream() {
   });
 
   player.play(resource);
-  console.log(`Started radio stream: ${config.radioStreamUrl}`);
+  console.log(`Started radio stream with "${config.ffmpegPath}": ${config.radioStreamUrl}`);
 }
 
 async function connectAndPlay() {
