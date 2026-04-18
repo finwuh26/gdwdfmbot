@@ -48,13 +48,23 @@ let connection;
 let reconnectTimeout;
 let streamAbortController;
 
-function restartStream(delayMs = 3000) {
+function scheduleStreamRestart(delayMs = 3000) {
   if (reconnectTimeout) {
     clearTimeout(reconnectTimeout);
   }
 
   reconnectTimeout = setTimeout(() => {
     void playStream();
+  }, delayMs);
+}
+
+function scheduleReconnect(delayMs = 5000) {
+  if (reconnectTimeout) {
+    clearTimeout(reconnectTimeout);
+  }
+
+  reconnectTimeout = setTimeout(() => {
+    void connectAndPlay();
   }, delayMs);
 }
 
@@ -89,7 +99,7 @@ async function playStream() {
     player.play(resource);
   } catch (error) {
     console.error('Failed to start stream:', error);
-    restartStream(5000);
+    scheduleStreamRestart(5000);
   }
 }
 
@@ -108,11 +118,11 @@ async function updateNowPlayingPresence() {
     const payload = await response.json();
     const song = payload?.now_playing?.song;
 
-    const artist = song?.artist?.trim();
-    const title = song?.title?.trim();
+    const artist = song?.artist?.trim() || '';
+    const title = song?.title?.trim() || '';
     const stationName = payload?.station?.name?.trim() || 'Goodwood FM';
 
-    const trackText = artist && title ? `${artist} - ${title}` : title || artist;
+    const trackText = [artist, title].filter(Boolean).join(' - ');
     const activityName = (trackText || stationName).slice(0, 128);
 
     client.user?.setPresence({
@@ -130,6 +140,10 @@ async function updateNowPlayingPresence() {
 }
 
 async function connectAndPlay() {
+  if (connection && connection.state.status !== VoiceConnectionStatus.Destroyed) {
+    return;
+  }
+
   const guild = await client.guilds.fetch(GUILD_ID);
   const channel = await guild.channels.fetch(VOICE_CHANNEL_ID);
 
@@ -147,16 +161,22 @@ async function connectAndPlay() {
 
   connection.subscribe(player);
 
-  connection.on(VoiceConnectionStatus.Disconnected, async () => {
+  const activeConnection = connection;
+
+  activeConnection.on(VoiceConnectionStatus.Disconnected, async () => {
     try {
       await Promise.race([
-        entersState(connection, VoiceConnectionStatus.Signalling, 5000),
-        entersState(connection, VoiceConnectionStatus.Connecting, 5000),
+        entersState(activeConnection, VoiceConnectionStatus.Signalling, 5000),
+        entersState(activeConnection, VoiceConnectionStatus.Connecting, 5000),
       ]);
     } catch {
-      restartStream();
-      connection.destroy();
-      connection = undefined;
+      if (activeConnection.state.status !== VoiceConnectionStatus.Destroyed) {
+        activeConnection.destroy();
+      }
+      if (connection === activeConnection) {
+        connection = undefined;
+      }
+      scheduleReconnect();
     }
   });
 
@@ -165,12 +185,12 @@ async function connectAndPlay() {
 }
 
 player.on(AudioPlayerStatus.Idle, () => {
-  restartStream();
+  scheduleStreamRestart();
 });
 
 player.on('error', (error) => {
   console.error('Audio player error:', error);
-  restartStream();
+  scheduleStreamRestart();
 });
 
 client.once('ready', async () => {
