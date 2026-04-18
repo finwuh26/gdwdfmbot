@@ -45,15 +45,16 @@ const player = createAudioPlayer({
 });
 
 let voiceConnection;
+let streamRestartTimeoutId;
 let reconnectTimeoutId;
 let streamFetchAbortController;
 
 function scheduleStreamRestart(delayMs = 3000) {
-  if (reconnectTimeoutId) {
-    clearTimeout(reconnectTimeoutId);
+  if (streamRestartTimeoutId) {
+    clearTimeout(streamRestartTimeoutId);
   }
 
-  reconnectTimeoutId = setTimeout(() => {
+  streamRestartTimeoutId = setTimeout(() => {
     void playStream();
   }, delayMs);
 }
