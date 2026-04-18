@@ -44,44 +44,44 @@ const player = createAudioPlayer({
   },
 });
 
-let connection;
-let reconnectTimeout;
-let streamAbortController;
+let voiceConnection;
+let reconnectTimeoutId;
+let streamFetchAbortController;
 
 function scheduleStreamRestart(delayMs = 3000) {
-  if (reconnectTimeout) {
-    clearTimeout(reconnectTimeout);
+  if (reconnectTimeoutId) {
+    clearTimeout(reconnectTimeoutId);
   }
 
-  reconnectTimeout = setTimeout(() => {
+  reconnectTimeoutId = setTimeout(() => {
     void playStream();
   }, delayMs);
 }
 
 function scheduleReconnect(delayMs = 5000) {
-  if (reconnectTimeout) {
-    clearTimeout(reconnectTimeout);
+  if (reconnectTimeoutId) {
+    clearTimeout(reconnectTimeoutId);
   }
 
-  reconnectTimeout = setTimeout(() => {
+  reconnectTimeoutId = setTimeout(() => {
     void connectAndPlay();
   }, delayMs);
 }
 
 async function playStream() {
   try {
-    if (!connection) {
+    if (!voiceConnection) {
       return;
     }
 
-    if (streamAbortController) {
-      streamAbortController.abort();
+    if (streamFetchAbortController) {
+      streamFetchAbortController.abort();
     }
 
-    streamAbortController = new AbortController();
+    streamFetchAbortController = new AbortController();
 
     const response = await fetch(STREAM_URL, {
-      signal: streamAbortController.signal,
+      signal: streamFetchAbortController.signal,
       headers: {
         'Icy-MetaData': '1',
       },
@@ -140,7 +140,7 @@ async function updateNowPlayingPresence() {
 }
 
 async function connectAndPlay() {
-  if (connection && connection.state.status !== VoiceConnectionStatus.Destroyed) {
+  if (voiceConnection && voiceConnection.state.status !== VoiceConnectionStatus.Destroyed) {
     return;
   }
 
@@ -151,7 +151,7 @@ async function connectAndPlay() {
     throw new Error('Configured VOICE_CHANNEL_ID is not a voice channel.');
   }
 
-  connection = joinVoiceChannel({
+  voiceConnection = joinVoiceChannel({
     guildId: guild.id,
     channelId: channel.id,
     adapterCreator: guild.voiceAdapterCreator,
@@ -159,11 +159,11 @@ async function connectAndPlay() {
     selfMute: false,
   });
 
-  connection.subscribe(player);
+  voiceConnection.subscribe(player);
 
-  const activeConnection = connection;
+  const activeConnection = voiceConnection;
 
-  activeConnection.on(VoiceConnectionStatus.Disconnected, async () => {
+  activeConnection.once(VoiceConnectionStatus.Disconnected, async () => {
     try {
       await Promise.race([
         entersState(activeConnection, VoiceConnectionStatus.Signalling, 5000),
@@ -173,14 +173,14 @@ async function connectAndPlay() {
       if (activeConnection.state.status !== VoiceConnectionStatus.Destroyed) {
         activeConnection.destroy();
       }
-      if (connection === activeConnection) {
-        connection = undefined;
+      if (voiceConnection === activeConnection) {
+        voiceConnection = undefined;
       }
       scheduleReconnect();
     }
   });
 
-  await entersState(connection, VoiceConnectionStatus.Ready, 30000);
+  await entersState(voiceConnection, VoiceConnectionStatus.Ready, 30000);
   await playStream();
 }
 
