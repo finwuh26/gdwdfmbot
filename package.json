@@ -1,0 +1,27 @@
+{
+  "name": "gdwdfmbot",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/finwuh26/gdwdfmbot.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/finwuh26/gdwdfmbot/issues"
+  },
+  "homepage": "https://github.com/finwuh26/gdwdfmbot#readme",
+  "dependencies": {
+    "@discordjs/voice": "^0.19.2",
+    "discord.js": "^14.26.3",
+    "ffmpeg-static": "^5.3.0",
+    "prism-media": "^1.3.5"
+  }
+}
