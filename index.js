@@ -1,6 +1,11 @@
 const { spawn } = require("node:child_process");
 const process = require("node:process");
-const { Client, GatewayIntentBits, ChannelType } = require("discord.js");
+const {
+  ActivityType,
+  Client,
+  GatewayIntentBits,
+  ChannelType,
+} = require("discord.js");
 const {
   AudioPlayerStatus,
   VoiceConnectionStatus,
@@ -18,6 +23,7 @@ const requiredEnvVars = [
   "GUILD_ID",
   "VOICE_CHANNEL_ID",
   "RADIO_STREAM_URL",
+  "NOW_PLAYING_API_URL",
 ];
 
 for (const envVar of requiredEnvVars) {
@@ -32,6 +38,8 @@ const config = {
   guildId: process.env.GUILD_ID,
   voiceChannelId: process.env.VOICE_CHANNEL_ID,
   radioStreamUrl: process.env.RADIO_STREAM_URL,
+  nowPlayingApiUrl: process.env.NOW_PLAYING_API_URL,
+  nowPlayingPollMs: Number(process.env.NOW_PLAYING_POLL_MS || 30000),
   selfDeaf: process.env.BOT_DEAF !== "false",
   selfMute: process.env.BOT_MUTE === "true",
   ffmpegPath: process.env.FFMPEG_PATH || "ffmpeg",
@@ -43,6 +51,64 @@ const client = new Client({
 
 const player = createAudioPlayer();
 let ffmpegProcess = null;
+let nowPlayingInterval = null;
+let lastPresenceText = null;
+
+async function updateNowPlayingStatus() {
+  try {
+    const response = await fetch(config.nowPlayingApiUrl, {
+      headers: {
+        "user-agent": "discord-radio-bot/1.0",
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+
+    const data = await response.json();
+    const song = data?.now_playing?.song;
+    const songText =
+      song?.text ||
+      [song?.artist, song?.title].filter(Boolean).join(" - ") ||
+      "Goodwood FM";
+
+    if (songText === lastPresenceText) {
+      return;
+    }
+
+    client.user.setPresence({
+      activities: [
+        {
+          name: songText.slice(0, 128),
+          type: ActivityType.Listening,
+        },
+      ],
+      status: "online",
+    });
+
+    lastPresenceText = songText;
+    console.log(`Updated status: ${songText}`);
+  } catch (error) {
+    console.error("Failed to update now playing status:", error.message);
+  }
+}
+
+function startNowPlayingUpdates() {
+  if (nowPlayingInterval) {
+    clearInterval(nowPlayingInterval);
+  }
+
+  updateNowPlayingStatus();
+  nowPlayingInterval = setInterval(updateNowPlayingStatus, config.nowPlayingPollMs);
+}
+
+function stopNowPlayingUpdates() {
+  if (nowPlayingInterval) {
+    clearInterval(nowPlayingInterval);
+    nowPlayingInterval = null;
+  }
+}
 
 function stopCurrentStream() {
   if (ffmpegProcess) {
@@ -172,6 +238,7 @@ async function connectAndPlay() {
   }
 
   startRadioStream();
+  startNowPlayingUpdates();
 
   connection.on(VoiceConnectionStatus.Disconnected, async () => {
     console.warn("Voice connection disconnected. Waiting for recovery...");
@@ -219,6 +286,7 @@ async function shutdown() {
   console.log("Shutting down...");
 
   stopCurrentStream();
+  stopNowPlayingUpdates();
   client.destroy();
   process.exit(0);
 }
